@@ -203,3 +203,8 @@ class Emitter {
                 string data;
 };
 ```
+---
+# Notes
+So last thing I did was let function calls add any parameters to the stack, making sure they are 16-aligned (notes)
+Next I want to go through the in-function statements, and have them use any necessary values from the stack. I'm going to have to pass the params all the way down to the primaries, and change the spots where i read from memory. instead ill just read from the stack. same with writing a parameter
+---
