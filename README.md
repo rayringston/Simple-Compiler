@@ -6,7 +6,7 @@ This compiler can be broken up into 3 sections - lexing, parsing, and emitting. 
 
 ## Lexing
 
-The [lexer.h](../src/lexer.h)
+The [lexer.h](/src/lexer.h)
 
 ## Parsing
 ## Emitting
