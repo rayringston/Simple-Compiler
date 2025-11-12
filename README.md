@@ -120,8 +120,54 @@ Token Lexer::getToken() {
 ```
 
 ## Parsing
+
+### Syntax Rules
+
+The following rules describe the syntax of the Simple language:
+
+```
+program ::=             {statement}
+statement ::=           "PRINT" (expression | string) nl
+
+                        "IF" condition "THEN" nl
+                                {statement}
+                        "ENDIF" nl
+
+                        "WHILE" condition "DO" nl
+                                {statement}
+                        "ENDWHILE" nl
+
+                        "LABEL" identifier nl
+                        "GOTO" identifier nl
+                        "INT" identifier "=" expression nl
+                        "FLOAT" identifier "=" expression nl
+                        "TEXT" identifier "=" expression nl
+                        indentifier "=" expression nl
+
+                        "FUNC" identifier ["USING" identifier {"," identifier}] "IS" nl
+                                {statement}
+                        "ENDFUNC" nl 
+
+                        "DO" identifier ["WITH expression {"," expression}] nl
+
+expression ::=          term {("-" | "+") term}
+term ::=                unary {("*" | "/" | "%") unary}
+unary ::=               ["-" | "+"] primary
+primary ::=             number | identifier
+condition ::=           expression ((">" | ">=" | "<" | "<=" | "==") expression)+
+nl ::=                  '\n'+
+
+```
+The entirety of a program is made out of any number of statements. Each of these statements can be broken down into a syntactual description of each statement, e.g. "IF" must be followed by a condition, "THEN", a line break, more statements, finally ending with "ENDIF". These are straightforward, but for expressions and coditions to be executed properly (using PEMDAS, rather than just left to right), they must be organized in a hierarchal structure. An expression is a number of terms added or subtracted together. These terms are built off of unaries multiplied and divided together. These operations must be separated to ensure proper order of execution. These unaries are made of primaries (numbers or identifiers) with an optional negative sign at the start. For example, the expression "3 + 2*-3", "3" + "2*-3" are the terms. For "3", it is the unary and the primary. "2*-3" is split into 2 unaries multiplied together, "2" and "-3". "2" is another primary, and "-3" become the primary "3".
+
+For statements, as of now functionality has been included for printing, if-statemetns, while loops, labels & gotos, variable declaration & assignment, and simple function declaration and calling. For the variable declarations, primitive types have not been implemented so INT, FLOAT, and TEXT all perform the same function. Moreover, the PRINT statment doesn't yet have the capability to print expressions. Printing strings in ARM64 is simple, but printing numbers requires each digit to be converted to ASCII values, and placed into a buffer. 
+
+Further work will be done to allow functions to accept parameters, and use them during calls.
+
 ## Emitting
-The emitter is the simplest component of the compiler, and is mainly controlled by the parser. After the parser determines the function of a line of code, the parser tells the emitter to produce a corresponding line (or in my case many lines) of code. Again, the [emitter.h](/src/emitter.h) file is simply a class, Emitter, which controls all functionality. ARM64 code has a particaular structure which can be seen below.
+The emitter is the simplest component of the compiler, and is mainly controlled by the parser. After the parser determines the function of a line of code, the parser tells the emitter to produce a corresponding line (or in my case many lines) of code. Again, the [emitter.h](/src/emitter.h) file is simply a class, Emitter, which controls all functionality. 
+
+ARM64 code has a particaular structure which can be seen below:
 
 ```asm
 .global _start
