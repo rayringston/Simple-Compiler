@@ -30,15 +30,28 @@ class FunctionMap {
 			return 0;
 		}
 
+
+		/*	TOP	  BOT
+		 *	
+		 *	[] [] lr fp|sp	2 params, 
+		 *	0  1
+		 *	3  2
+		 *	24 16 8  0
+		 *
+		 *	[] [] [] [-] lr fp|sp
+		 *	0  1  2
+		 *	5  4  3
+		 *	40 32 24 16  8  0
+		 */
 		string getParamOffset(vector<string> params, string param) {
 			int idx = find(params.begin(), params.end(), param) - params.begin();
 
 			int posFromBack;
 				
 			if (params.size() % 2 != 0) { 
-				posFromBack = params.size() - idx;
+				posFromBack = params.size() - idx + 2;
 			} else { // for an odd number of params, the offset will be 16 aligned, so there's 8 bytes in padding
-				posFromBack = params.size() - idx;
+				posFromBack = params.size() - idx + 1;
 			}
 
 			posFromBack *= 8; // 8 bytes per element
@@ -247,21 +260,37 @@ void Parser::statement(TOKEN_TYPE caller, vector<string> parameters) {
 				expression(caller, parameters);
 			}
 		} else if (checkToken(TOKEN_TYPE::IF)) { // IF condition THEN statement ENDIF
-			cout << "FUNC-STATEMENT-IF\n";
+			
+
+			cout << "STATEMENT-IF\n";
 			nextToken();
-			condition("XIF" + to_string(ifCount), caller, parameters);
+			condition("XIF" + to_string(ifCount), caller);
 
 			match(TOKEN_TYPE::THEN);
 			nl();
 
-			while (checkToken(TOKEN_TYPE::ENDIF) == 0) {
-				statement(caller, parameters);
+			while (checkToken(TOKEN_TYPE::ENDIF) == 0 && checkToken(TOKEN_TYPE::ELSE) == 0) {
+				statement(caller);
 			}
+			emitter.functionLine("b XELSE" + to_string(ifCount));
+
+			emitter.functionLine("XIF" + to_string(ifCount) + ":");
+			
+			if (checkToken(TOKEN_TYPE::ELSE)) { // IF condition THEN {statement} ELSE {statement} ENDIF
+				cout << "ELSE-BRANCH\n";
+				nextToken();
+				nl();
+
+				while (checkToken(TOKEN_TYPE::ENDIF) == 0) {
+					statement(caller);
+				}
+			}
+
 			match(TOKEN_TYPE::ENDIF);
 			
-			emitter.functionLine("XIF" + to_string(ifCount) + ":");
+			
+			emitter.functionLine("XELSE" + to_string(ifCount) + ":");
 			ifCount++;
-
 		} else if (checkToken(TOKEN_TYPE::WHILE)) { // WHILE condition DO statement ENDWHILE
 			cout << "FUNC-STATEMENT-WHILE\n";
 			nextToken();
@@ -412,12 +441,27 @@ void Parser::statement(TOKEN_TYPE caller, vector<string> parameters) {
 			match(TOKEN_TYPE::THEN);
 			nl();
 
-			while (checkToken(TOKEN_TYPE::ENDIF) == 0) {
+			while (checkToken(TOKEN_TYPE::ENDIF) == 0 && checkToken(TOKEN_TYPE::ELSE) == 0) {
 				statement(caller);
 			}
+			emitter.emitLine("b XELSE" + to_string(ifCount));
+
+			emitter.emitLine("XIF" + to_string(ifCount) + ":");
+			
+			if (checkToken(TOKEN_TYPE::ELSE)) { // IF condition THEN {statement} ELSE {statement} ENDIF
+				cout << "ELSE-BRANCH\n";
+				nextToken();
+				nl();
+
+				while (checkToken(TOKEN_TYPE::ENDIF) == 0) {
+					statement(caller);
+				}
+			}
+
 			match(TOKEN_TYPE::ENDIF);
 			
-			emitter.emitLine("XIF" + to_string(ifCount) + ":");
+			
+			emitter.emitLine("XELSE" + to_string(ifCount) + ":");
 			ifCount++;
 
 		} else if (checkToken(TOKEN_TYPE::WHILE)) { // WHILE condition DO statement ENDWHILE
@@ -494,9 +538,11 @@ void Parser::statement(TOKEN_TYPE caller, vector<string> parameters) {
 
 			match(TOKEN_TYPE::ENDFUNC);
 			
-			emitter.functionLine("add sp, sp, #" + to_string((params.size() + params.size() % 2) * 8));
 
 			emitter.functionLine("ldp fp, lr, [sp], #16");
+			
+			emitter.functionLine("add sp, sp, #" + to_string((params.size() + params.size() % 2) * 8));
+
 			emitter.functionLine("br lr");
 
 		} else if (checkToken(TOKEN_TYPE::LABEL)) { // LABEL identifier
@@ -741,7 +787,7 @@ void Parser::primary(TOKEN_TYPE caller, vector<string> parameters) { // Primary 
 		else emitter.emitLine("mov x9, #" + curToken.text);
 		nextToken();
 	} else if (checkToken(TOKEN_TYPE::IDENTIFIER)) {
-		if (!symbolMap.exists(curToken.text)) {
+		if (!symbolMap.exists(curToken.text) && find(parameters.begin(), parameters.end(), curToken.text) == parameters.end()) {
 			abort("Undeclared symbol (" + curToken.text);
 		}
 
@@ -826,16 +872,28 @@ void Parser::condition(string exitLabel, TOKEN_TYPE caller, vector<string> param
 
 {program} ::= 		{statement}
 {statement} ::= 	"PRINT" (expression | string) nl
-			"IF" condition "THEN" nl {statement} "ENDIF" nl
+			
+			"IF" condition "THEN" nl 
+				{statement}
+			["ELSE"
+				{statement}
+			]
+			"ENDIF" nl
+
 			"WHILE" condition "DO" nl {statement} "ENDWHILE" nl
+
 			"LABEL" identifier nl
 			"GOTO" identifier nl
 			"INT" identifier "=" expression nl
 			"FLOAT" identifier "=" expression nl
 			"TEXT" identifier "=" expression nl
 			indentifier "=" expression nl
-			"FUNC" identifier "IS" nl {statement} "ENDFUNC" nl
-			"DO" identifier
+
+			"FUNC" identifier ["USING" identifier {"," identifier}]"IS" nl 
+				{statement} 
+			"ENDFUNC" nl
+
+			"DO" identifier ["WITH" expression {"," expression}]
 
 {expression} ::= term {("-" | "+") term}
 term ::= unary {("*" | "/" | "%") unary}
