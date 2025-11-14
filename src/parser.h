@@ -5,6 +5,76 @@
 
 using namespace std;
 
+struct functionParams {
+	string name;
+	vector<string> params;
+};
+
+class FunctionMap {
+	public:
+		FunctionMap() {}
+		
+		int exists(string name) { // helper function to figure out if an entry exists
+			if (find(functions.begin(), functions.end(), name) == functions.end()) return 0;
+			else return 1;
+		}
+
+		int paramExists(string name, string param) { // check to see a param is already defined -- maybe not useful
+			for (int i = 0; i < paramMap.size(); i++) {
+				if (paramMap[i].name == name) {
+					for (int j = 0; j < paramMap[i].params.size(); i++) {
+						if (paramMap[i].params[j] == param) return 1;
+					}
+				}
+			}
+			return 0;
+		}
+
+		string getParamOffset(vector<string> params, string param) {
+			int idx = find(params.begin(), params.end(), param) - params.begin();
+
+			int posFromBack;
+				
+			if (params.size() % 2 != 0) { 
+				posFromBack = params.size() - idx;
+			} else { // for an odd number of params, the offset will be 16 aligned, so there's 8 bytes in padding
+				posFromBack = params.size() - idx;
+			}
+
+			posFromBack *= 8; // 8 bytes per element
+
+			return "#" + to_string(posFromBack);
+		}
+
+		string getLabel(string name) { 	// helper function to get the label for each function
+			int idx = find(functions.begin(), functions.end(), name) - functions.begin();
+
+			return "FUNC" + idx;
+		}
+
+		vector<string> getParams(string name) { // return the params listed under a function label
+			for (int i = 0; i < paramMap.size(); i++) {
+				if (paramMap[i].name == name) return paramMap[i].params;
+			}
+			return {};
+		}
+
+		void push_name(string name) { // should be called before push_back 
+			functions.push_back(name);
+		}
+
+		void push_back(string name, vector<string> params = {}) {
+			functionParams entry;
+			entry.name = name;
+			entry.params = params;
+
+			paramMap.push_back(entry);
+		}
+
+		vector<functionParams> paramMap;
+		vector<string> functions;
+};
+
 class SymbolMap {
 	public:
 		SymbolMap() {
@@ -46,13 +116,13 @@ class Parser {
 		void match(TOKEN_TYPE kind);
 		// Sytanx function declarations
 		void program();
-		void statement(TOKEN_TYPE caller = TOKEN_TYPE::INVALID);
+		void statement(TOKEN_TYPE caller = TOKEN_TYPE::INVALID, vector<string> parameters = {});
 		void nl();
-		void expression(TOKEN_TYPE caller = TOKEN_TYPE::INVALID);
-		void term(TOKEN_TYPE caller = TOKEN_TYPE::INVALID);
-		void unary(TOKEN_TYPE caller = TOKEN_TYPE::INVALID);
-		void primary(TOKEN_TYPE caller = TOKEN_TYPE::INVALID);
-		void condition(string exitLabel, TOKEN_TYPE caller = TOKEN_TYPE::INVALID);
+		void expression(TOKEN_TYPE caller = TOKEN_TYPE::INVALID, vector<string> parameters = {});
+		void term(TOKEN_TYPE caller = TOKEN_TYPE::INVALID, vector<string> parameters = {});
+		void unary(TOKEN_TYPE caller = TOKEN_TYPE::INVALID, vector<string> parameters = {});
+		void primary(TOKEN_TYPE caller = TOKEN_TYPE::INVALID, vector<string> parameters = {});
+		void condition(string exitLabel, TOKEN_TYPE caller = TOKEN_TYPE::INVALID, vector<string> parameters = {});
 
 		Lexer& lexer;
 		Emitter& emitter;
@@ -60,11 +130,13 @@ class Parser {
 		Token peekToken;
 
 		SymbolMap symbolMap;
+		FunctionMap functionMap;
+
 		vector <string> labels;
 		vector <string> gotos;
 		vector <string> stringLiterals;
 		vector <string> functions;
-		vector <string> functionsUsed;
+		
 
 		int ifCount;
 		int whileCount;
@@ -150,9 +222,9 @@ void Parser::program() {
 	emitter.emitLine("svc #0");
 }
 
-void Parser::statement(TOKEN_TYPE caller) {
+void Parser::statement(TOKEN_TYPE caller, vector<string> parameters) {
 	// Print statement
-	if (caller == TOKEN_TYPE::FUNC) {	
+	if (caller == TOKEN_TYPE::FUNC) { // -------------------------------------------------------------- IN-FUNCTION STATEMENTS	
 		if (checkToken(TOKEN_TYPE::PRINT)) { // Should be PRINT - STRING | EXPRESSION - NL
 			cout << "FUNC-STATEMENT-PRINT\n";
 			nextToken();
@@ -172,18 +244,18 @@ void Parser::statement(TOKEN_TYPE caller) {
 				nextToken();
 			} else {
 				abort("Print expression not yet implemented");
-				expression(caller);
+				expression(caller, parameters);
 			}
 		} else if (checkToken(TOKEN_TYPE::IF)) { // IF condition THEN statement ENDIF
 			cout << "FUNC-STATEMENT-IF\n";
 			nextToken();
-			condition("XIF" + to_string(ifCount), caller);
+			condition("XIF" + to_string(ifCount), caller, parameters);
 
 			match(TOKEN_TYPE::THEN);
 			nl();
 
 			while (checkToken(TOKEN_TYPE::ENDIF) == 0) {
-				statement(caller);
+				statement(caller, parameters);
 			}
 			match(TOKEN_TYPE::ENDIF);
 			
@@ -195,13 +267,13 @@ void Parser::statement(TOKEN_TYPE caller) {
 			nextToken();
 			emitter.functionLine("SWHILE" + to_string(whileCount) + ":");
 
-			condition("XWHILE" + to_string(whileCount), caller);
+			condition("XWHILE" + to_string(whileCount), caller, parameters);
 			
 			match(TOKEN_TYPE::DO);
 			nl();
 
 			while (checkToken(TOKEN_TYPE::ENDWHILE) == 0) {
-				statement(caller);
+				statement(caller, parameters);
 			}
 			match(TOKEN_TYPE::ENDWHILE);
 			
@@ -234,7 +306,7 @@ void Parser::statement(TOKEN_TYPE caller) {
 			match(TOKEN_TYPE::IDENTIFIER);
 			match(TOKEN_TYPE::EQ);
 
-			expression(caller);
+			expression(caller, parameters);
 
 			emitter.functionLine("adr x13, " + identLabel);
 			emitter.functionLine("str x11, [x13]");
@@ -253,7 +325,7 @@ void Parser::statement(TOKEN_TYPE caller) {
 			match(TOKEN_TYPE::IDENTIFIER);
 			match(TOKEN_TYPE::EQ);
 
-			expression(caller);
+			expression(caller, parameters);
 
 			emitter.functionLine("adr x13, " + identLabel);
 			emitter.functionLine("str x11, [x13]");
@@ -273,7 +345,7 @@ void Parser::statement(TOKEN_TYPE caller) {
 			match(TOKEN_TYPE::IDENTIFIER);
 			match(TOKEN_TYPE::EQ);
 
-			expression(caller);
+			expression(caller, parameters);
 
 			emitter.functionLine("adr x13, " + identLabel);
 			emitter.functionLine("str x10, [x13]");
@@ -290,15 +362,27 @@ void Parser::statement(TOKEN_TYPE caller) {
 
 			match(TOKEN_TYPE::EQ);
 
-			expression(caller);
+			expression(caller, parameters);
 
 			emitter.functionLine("adr x13, " + identLabel);
 			emitter.functionLine("str x11, [x13]");
 		
+		} else if (checkToken(TOKEN_TYPE::DO)) { // "DO" identifier
+			cout << "STATEMENT-FUNCTIONCALL";
+			nextToken();
+			cout << " (" + curToken.text + ")";
+			if (!functionMap.exists(curToken.text)) {
+				abort("Function " + curToken.text + " does not exist");
+			}
+				
+			string bLabel = functionMap.getLabel(curToken.text);
+
+			emitter.functionLine("bl " + bLabel);
+			match(TOKEN_TYPE::IDENTIFIER);
 		} else {
 			abort("Invalid state at " + string(curToken.text) + " (" + tokenTypeToString(curToken.type) + ").");
 		}
-	} else {
+	} else { // --------------------------------------------------------------------------------------------------- OUT-OF-FUNCTION STATEMENTS
 		if (checkToken(TOKEN_TYPE::PRINT)) { // Should be PRINT - STRING | EXPRESSION - NL
 			cout << "STATEMENT-PRINT\n";
 			nextToken();
@@ -359,24 +443,60 @@ void Parser::statement(TOKEN_TYPE caller) {
 			cout << "STATEMENT-FUNCTION\n";
 			nextToken();
 
-			if (find(functions.begin(), functions.end(), curToken.text) != functions.end()) {
+			if (functionMap.exists(curToken.text)) {
 				abort("Function (" + curToken.text + ") already exists");
 			}
 
-			functions.push_back(curToken.text);
+			functionMap.push_name(curToken.text);
 
-			string bLabel = "FUNC" + to_string(find(functions.begin(), functions.end(), curToken.text) - functions.begin());
+			string funcIdentifier = curToken.text;
+			string bLabel = functionMap.getLabel(curToken.text);	
 			emitter.functionLine(bLabel + ":");
 
-			nextToken();
+			emitter.functionLine("stp fp, lr, [sp, #-16]!");
+
+			match(TOKEN_TYPE::IDENTIFIER);
+			
+			vector<string> params;
+
+			if (checkToken(TOKEN_TYPE::USING)) { // FUNC identifier USING identifier {"," identifier} IS ...
+				cout << "\tPARAMETERS\n";
+				nextToken();
+
+				params.push_back(curToken.text);
+				match(TOKEN_TYPE::IDENTIFIER);
+				
+				while (checkToken(TOKEN_TYPE::IS) == 0) {
+					match(TOKEN_TYPE::COMMA);
+					
+					if (find(params.begin(), params.end(), curToken.text) != params.end()) {
+						abort("Function parameter (" + curToken.text + ") already exists");
+					}
+					
+					if (symbolMap.exists(curToken.text)) {
+						abort("Symbol (" + curToken.text + ") exists outside of the function");
+					}
+
+					params.push_back(curToken.text);
+
+					match(TOKEN_TYPE::IDENTIFIER);
+				}
+
+				functionMap.push_back(funcIdentifier, params);
+			}
+
 			match(TOKEN_TYPE::IS);
 			nl();
 
 			while (!checkToken(TOKEN_TYPE::ENDFUNC)) {
-				statement(TOKEN_TYPE::FUNC);
+				statement(TOKEN_TYPE::FUNC, params);
 			}
 
 			match(TOKEN_TYPE::ENDFUNC);
+			
+			emitter.functionLine("add sp, sp, #" + to_string((params.size() + params.size() % 2) * 8));
+
+			emitter.functionLine("ldp fp, lr, [sp], #16");
 			emitter.functionLine("br lr");
 
 		} else if (checkToken(TOKEN_TYPE::LABEL)) { // LABEL identifier
@@ -475,16 +595,48 @@ void Parser::statement(TOKEN_TYPE caller) {
 		} else if (checkToken(TOKEN_TYPE::DO)) { // "DO" identifier
 			cout << "STATEMENT-FUNCTIONCALL";
 			nextToken();
-			cout << " (" + curToken.text + ")";
-			if (find(functions.begin(), functions.end(), curToken.text) == functions.end()) {
+			cout << " (" + curToken.text + ")\n";
+			if (!functionMap.exists(curToken.text)) {
 				abort("Function " + curToken.text + " does not exist");
 			}
 			
-			string bLabel = "FUNC" + to_string(find(functions.begin(), functions.end(), curToken.text) - functions.begin());
-
-			emitter.emitLine("bl " + bLabel);
+			string branchIdentifier = curToken.text;
+			string bLabel = functionMap.getLabel(curToken.text);
+			//emitter.emitLine("bl " + bLabel); dont do this yet
 			match(TOKEN_TYPE::IDENTIFIER);
 
+
+			if (checkToken(TOKEN_TYPE::WITH)) { // "DO" identifier "WITH" expression {"," expression}
+				cout << "\nFUNCTIONCALL-PARAMETERS\n";
+				nextToken();
+				
+				int paramCount = 1;
+				expression();
+
+				emitter.emitLine("str x11, [sp, #-8]!");
+
+				while (checkToken(TOKEN_TYPE::NEWLINE) == 0) {
+					match(TOKEN_TYPE::COMMA);
+					paramCount++;
+
+					expression();
+					emitter.emitLine("str x11, [sp, #-8]!");
+				}
+				
+				if (paramCount % 2 != 0) { // stack always has to be 16 aligned
+					emitter.emitLine("sub sp, sp, #8");			
+				}
+
+				if (paramCount != functionMap.getParams(branchIdentifier).size()) {
+					abort("Function (" + branchIdentifier + ") expects " + to_string(functionMap.getParams(branchIdentifier).size()) + " parameters, only recieved " + to_string(paramCount));
+				}
+			} else {
+				if (functionMap.getParams(branchIdentifier).size() != 0) {
+					abort("Function (" + branchIdentifier + ") expects arguments");
+				}
+			}
+
+			emitter.emitLine("bl " + bLabel);
 		} else {
 			abort("Invalid state at " + string(curToken.text) + " (" + tokenTypeToString(curToken.type) + ").");
 		}
@@ -505,10 +657,10 @@ void Parser::nl() {
 }
 
 // expression ::= term {("+" | "/") term}
-void Parser::expression(TOKEN_TYPE caller) {
+void Parser::expression(TOKEN_TYPE caller, vector<string> parameters) {
 	cout << "EXPRESSION\n";
 
-	term(caller);
+	term(caller, parameters);
 
 	if (caller == TOKEN_TYPE::FUNC) emitter.functionLine("mov x11, x10");
 	else emitter.emitLine("mov x11, x10");
@@ -517,7 +669,7 @@ void Parser::expression(TOKEN_TYPE caller) {
 		TOKEN_TYPE lastType = curToken.type;
 
 		nextToken();
-		term(caller);
+		term(caller, parameters);
 
 		if (lastType == TOKEN_TYPE::PLUS) { // +
 			if (caller == TOKEN_TYPE::FUNC) emitter.functionLine("add x11, x11, x10");
@@ -530,10 +682,10 @@ void Parser::expression(TOKEN_TYPE caller) {
 }
 
 // term ::= unary {("*" | "/") unary}
-void Parser::term(TOKEN_TYPE caller) {
+void Parser::term(TOKEN_TYPE caller, vector<string> parameters) {
 	cout << "TERM\n";
 
-	unary(caller); // hold each unary in r10. do operations on r9 and put the results in r10
+	unary(caller, parameters); // hold each unary in r10. do operations on r9 and put the results in r10
 	
 	if (caller == TOKEN_TYPE::FUNC) emitter.functionLine("mov x10, x9");
 	else emitter.emitLine("mov x10, x9");
@@ -542,7 +694,7 @@ void Parser::term(TOKEN_TYPE caller) {
 	while (checkToken(TOKEN_TYPE::ASTERISK) || checkToken(TOKEN_TYPE::SLASH) || checkToken(TOKEN_TYPE::MODULO)) {
 		TOKEN_TYPE lastType = curToken.type;
 		nextToken();
-		unary(caller);
+		unary(caller, parameters);
 
 		if (lastType == TOKEN_TYPE::ASTERISK) { 	// multiply
 			if (caller == TOKEN_TYPE::FUNC) emitter.functionLine("mul x10, x10, x9");
@@ -563,7 +715,7 @@ void Parser::term(TOKEN_TYPE caller) {
 }
 
 // unary ::= ["+" | "-"] primary
-void Parser::unary(TOKEN_TYPE caller) {
+void Parser::unary(TOKEN_TYPE caller, vector<string> parameters) {
 	cout << "UNARY\n";
 
 	TOKEN_TYPE lastType = curToken.type;
@@ -572,7 +724,7 @@ void Parser::unary(TOKEN_TYPE caller) {
 	if (curToken.type == TOKEN_TYPE::PLUS || curToken.type == TOKEN_TYPE::MINUS) {
 		nextToken();
 	}
-	primary(caller);
+	primary(caller, parameters);
 
 	if (lastType == TOKEN_TYPE::MINUS) {
 		if (caller == TOKEN_TYPE::FUNC) emitter.functionLine("mvn x9, x9");
@@ -581,7 +733,7 @@ void Parser::unary(TOKEN_TYPE caller) {
 }
 
 // primary ::= number | identifier
-void Parser::primary(TOKEN_TYPE caller) { // Primary held in r9
+void Parser::primary(TOKEN_TYPE caller, vector<string> parameters) { // Primary held in r9
 	cout << "PRIMARY (" << curToken.text << ")\n";
 
 	if (checkToken(TOKEN_TYPE::NUMBER)) {
@@ -594,8 +746,14 @@ void Parser::primary(TOKEN_TYPE caller) { // Primary held in r9
 		}
 
 		if (caller == TOKEN_TYPE::FUNC) {
-			 emitter.functionLine("adr x9, " + symbolMap.getLabel(curToken.text));
-			 emitter.functionLine("ldr x9, [x9]");
+			 if (!parameters.empty()) {
+			 	if (find(parameters.begin(), parameters.end(), curToken.text) != parameters.end()) {
+					emitter.functionLine("ldr x9, [sp, " + functionMap.getParamOffset(parameters, curToken.text) + "]");
+				} else {
+			 		emitter.functionLine("adr x9, " + symbolMap.getLabel(curToken.text));
+			 		emitter.functionLine("ldr x9, [x9]");
+				}
+			}
 		}
 		
 		else {
@@ -610,10 +768,10 @@ void Parser::primary(TOKEN_TYPE caller) { // Primary held in r9
 }
 
 // condition ::= expression (("==" | ">" | ">=" | "<"| "<=") experssion)+
-void Parser::condition(string exitLabel, TOKEN_TYPE caller) {
+void Parser::condition(string exitLabel, TOKEN_TYPE caller, vector<string> parameters) {
 	cout << "CONDITION\n";
 
-	expression();
+	expression(caller, parameters);
 	// result in r11
 	if (caller == TOKEN_TYPE::FUNC) emitter.functionLine("mov x12, x11");
 	else emitter.emitLine("mov x12, x11");
@@ -622,33 +780,39 @@ void Parser::condition(string exitLabel, TOKEN_TYPE caller) {
 
 	if (checkToken(TOKEN_TYPE::EQEQ) || checkToken(TOKEN_TYPE::NEQ) || checkToken(TOKEN_TYPE::GT) || checkToken(TOKEN_TYPE::GTEQ) || checkToken(TOKEN_TYPE::LT) || checkToken(TOKEN_TYPE::LTEQ)) {
 		nextToken();
-		expression();
+		expression(caller, parameters);
 	} else {
 		abort("Expected expression, got " + curToken.text);
 	}
+	
+	if (caller == TOKEN_TYPE::FUNC) emitter.functionLine("cmp x12, x11");
+	else emitter.emitLine("cmp x12, x11");
 
-	emitter.emitLine("cmp x12, x11");
+	string branchType = "";
 
 	switch (conditional) {
 		case TOKEN_TYPE::EQEQ:
-			emitter.emitLine("bne " + exitLabel);
+			branchType = "bne ";
 			break;
 		case TOKEN_TYPE::NEQ:
-			emitter.emitLine("beq " + exitLabel);
+			branchType = "beq "; 
 			break;
 		case TOKEN_TYPE::GT:
-			emitter.emitLine("ble " + exitLabel);
+			branchType = "ble "; 	
 			break;
 		case TOKEN_TYPE::GTEQ:
-			emitter.emitLine("blt " + exitLabel);
+			branchType = "blt ";
 			break;
 		case TOKEN_TYPE::LT:
-			emitter.emitLine("bge " + exitLabel);
+			branchType = "bge ";
 			break;
 		case TOKEN_TYPE::LTEQ:
-			emitter.emitLine("bgt " + exitLabel);
+			branchType = "bgt ";
 			break;
 	}
+
+	if (caller == TOKEN_TYPE::FUNC) emitter.functionLine(branchType + exitLabel);
+	else emitter.emitLine(branchType + exitLabel);
 
 	/* -------------- Currently removed multiple expressions w/i a condition
 	while (checkToken(TOKEN_TYPE::EQEQ) || checkToken(TOKEN_TYPE::GT) || checkToken(TOKEN_TYPE::GTEQ) || checkToken(TOKEN_TYPE::LT) || checkToken(TOKEN_TYPE::LTEQ)) {
