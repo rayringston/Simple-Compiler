@@ -22,12 +22,15 @@ enum TOKEN_TYPE : int {
 	TEXT,
 	IF,
 	THEN,
+	ELSE,
 	ENDIF,
 	WHILE,
 	DO,
 	ENDWHILE,
 	FUNC,
 	IS,
+	USING,
+	WITH,
 	ENDFUNC,
 	PRINT,
 	LABEL,
@@ -45,33 +48,42 @@ enum TOKEN_TYPE : int {
 	LTEQ,
 	EQEQ,
 	NEQ,
+	COMMA,
 	COMMENT // #
 };
 
 string tokenTypeToString(TOKEN_TYPE type) {
 	switch(type) {
+		// LITERALS
 		case END: return "END";
 		case NEWLINE: return "NEWLINE";
 		case NUMBER: return "NUMBER";
 		case STRING: return "STRING";
 		case IDENTIFIER: return "IDENTIFIER";
-
+		// KEYWORDS
 		case INT: return "INT";
 		case FLOAT: return "FLOAT";
 		case TEXT: return "TEXT";
+
 		case IF: return "IF";
 		case THEN: return "THEN";
+		case ELSE: return "ELSE";
 		case ENDIF: return "ENDIF";
+
 		case WHILE: return "WHILE";
 		case DO: return "DO";
 		case ENDWHILE: return "ENDWHILE";
+
 		case FUNC: return "FUNC";
 		case IS: return "IS";
+		case USING: return "USING";
+		case WITH: return "WITH";
 		case ENDFUNC: return "ENDFUNC";
+
 		case PRINT: return "PRINT";
 		case LABEL: return "LABEL";
 		case GOTO: return "GOTO";
-
+		// OPERATORS
 		case EQ: return "EQ";
 		case PLUS: return "PLUS";
 		case MINUS: return "MINUS";
@@ -85,6 +97,8 @@ string tokenTypeToString(TOKEN_TYPE type) {
 		case EQEQ: return "EQEQ";
 		case NEQ: return "NEQ";
 		case COMMENT: return "COMMENT";
+		case COMMA: return "COMMA";
+
 		default: return "INVALID";
 	}
 }
@@ -110,6 +124,7 @@ class Token {
 			else if (tokenText == "TEXT") return TEXT;
 			else if (tokenText == "IF") return IF;
 			else if (tokenText == "THEN") return THEN;
+			else if (tokenText == "ELSE") return ELSE;
 			else if (tokenText == "ENDIF") return ENDIF;
 			else if (tokenText == "WHILE") return WHILE;
 			else if (tokenText == "DO") return DO;
@@ -119,6 +134,8 @@ class Token {
 			else if (tokenText == "PRINT") return PRINT;
 			else if (tokenText == "FUNC") return FUNC;
 			else if (tokenText == "IS") return IS;
+			else if (tokenText == "WITH") return WITH;
+			else if (tokenText == "USING") return USING;
 			else if (tokenText == "ENDFUNC") return ENDFUNC;
 			else return INVALID;
 		}
@@ -206,6 +223,8 @@ Token Lexer::getToken() {
 		curToken = Token(string(1, curChar), TOKEN_TYPE::SLASH);
 	} else if (curChar == '%') {
 		curToken = Token(string(1, curChar), TOKEN_TYPE::MODULO);
+	} else if (curChar == ',') {
+		curToken = Token(string(1, curChar), TOKEN_TYPE::COMMA);
 	} else if (curChar == '!') {
 		if (peek() == '=') {
 			char lastChar = curChar;
